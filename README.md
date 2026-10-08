@@ -14,6 +14,7 @@ DJOneHub 是一款面向**大疆第一代 4G 模块**的第三方 macOS 管理�
 | 模块自动识别 | 已实现 | 识别大疆第一代 4G 模块，并处理拔出、重新连接和换卡 |
 | 模块状态 | 已实现 | 显示运营商、信号、网络制式、SIM 状态和当前工作模式 |
 | 短信管理 | 已实现 | 接收、发送、自动轮询、验证码提取及模块旧短信清理 |
+| 短信 Webhook | 已实现 | 将收到的短信以 JSON POST 转发，支持认证令牌、失败重试和持久化去重 |
 | eSIM Profile | 已实现 | 读取、下载、启用、改名和删除兼容 eUICC 卡片中的 Profile |
 | Profile 号码资料 | 已实现 | 将手动填写的号码保存到模块通讯录，并按 ICCID 关联 Profile |
 | USB 4G 上网 | 已实现 | 切换 USB 网卡模式，让 macOS 使用 SIM 卡流量上网 |
@@ -161,6 +162,12 @@ xattr -dr com.apple.quarantine ./djonehub ./bin ./lib
 ### 短信模式
 
 短信模式用于接收和发送短信、自动轮询新短信、提取常见验证码、管理 eSIM Profile 和发送 AT 指令。
+
+### 短信 Webhook
+
+Docker 版在项目目录将 `.env.example` 复制为 `.env`，填写 `DJONEHUB_WEBHOOK_URL` 和可选的 `DJONEHUB_WEBHOOK_TOKEN`，然后执行 `make up`，即可自动转发收到的短信。地址留空时关闭转发。配置、JSON 格式与重试规则见 [短信 Webhook 使用说明](docs/WEBHOOK.md)。
+
+### 短信收发
 
 “清空模块旧短信”只清理模块内部 `ME` 存储中的旧短信，例如二手模块可能残留的历史短信。网页收件箱主要缓存在程序内存中，关闭程序后，本次运行期间读取的短信缓存会自动清除。
 

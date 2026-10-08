@@ -30,4 +30,5 @@ help:
 	  'make logs            查看实时日志' \
 	  'make status          查看运行状态' \
 	  'make doctor          检查 Docker 和 USB' \
-	  'make up DJONEHUB_PORT=7576  使用其他端口'
+	  'make up DJONEHUB_PORT=7576  使用其他端口' \
+	  'Webhook 配置：复制 .env.example 为 .env，填写地址后 make up'

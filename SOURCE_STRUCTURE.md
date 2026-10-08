@@ -46,6 +46,7 @@ DJOneHub-source-minimal/
 - `cmd/djonehub-macos/main.go`：HTTP 服务、设备状态、短信、eSIM、网络和流量 API。
 - `cmd/djonehub-macos/usbat_libusb.go`：macOS/Linux 上通过 libusb 接管大疆模块 USB AT 接口。
 - `cmd/djonehub-macos/linux_system.go`：Linux 的 USB 枚举、网络接口、路由和流量读取。
+- `cmd/djonehub-macos/sms_webhook.go`：短信 Webhook、持久化队列、去重和后台重试。
 - `cmd/djonehub-macos/usbat_esim_channel.go`：经 AT/APDU 访问实体 eUICC 卡片。
 - `cmd/djonehub-macos/web/`：由 `go:embed` 编译进二进制的网页界面。
 

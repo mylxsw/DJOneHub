@@ -90,6 +90,7 @@ type app struct {
 	sms            []receivedSMS
 	smsSendMu      sync.Mutex
 	smsReassembler *smscodec.Reassembler
+	smsWebhook     *smsWebhook
 
 	smsPollInterval  time.Duration
 	smsAutoCleanupME bool
@@ -199,6 +200,11 @@ func main() {
 		serve(instance, listen)
 		return
 	}
+	webhook, err := newSMSWebhookFromEnv()
+	if err != nil {
+		log.Fatalf("initialize SMS webhook: %v", err)
+	}
+	defer webhook.close()
 
 	if strings.TrimSpace(port) == "" {
 		var err error
@@ -214,6 +220,7 @@ func main() {
 				smsPollInterval:  8 * time.Second,
 				smsAutoCleanupME: smsAutoCleanup,
 				smsReassembler:   smscodec.NewReassembler(),
+				smsWebhook:       webhook,
 			}
 			if usbDevice != nil {
 				log.Printf("DJI USB device detected without AT serial port: %s %s (%s:%s)",
@@ -253,7 +260,7 @@ func main() {
 		log.Fatalf("create modem manager: %v", err)
 	}
 
-	instance := &app{modem: manager, port: port, smsPollInterval: 8 * time.Second, smsAutoCleanupME: smsAutoCleanup}
+	instance := &app{modem: manager, port: port, smsPollInterval: 8 * time.Second, smsAutoCleanupME: smsAutoCleanup, smsWebhook: webhook}
 	manager.SetSMSCallback(instance.recordSMS)
 	if err := manager.Start(); err != nil {
 		log.Fatalf("open modem on %s: %v", port, err)
@@ -552,6 +559,11 @@ func (a *app) recordSMS(sender, content string, timestamp time.Time) {
 }
 
 func (a *app) mergeSMS(messages []receivedSMS) (newCount int, total int) {
+	if !a.demo {
+		if err := a.smsWebhook.enqueue(messages); err != nil {
+			log.Printf("SMS webhook queue could not be saved")
+		}
+	}
 	a.smsMu.Lock()
 	defer a.smsMu.Unlock()
 	seen := make(map[string]bool, len(a.sms)+len(messages))
@@ -580,7 +592,7 @@ func (a *app) mergeSMS(messages []receivedSMS) (newCount int, total int) {
 }
 
 func smsCacheKey(item receivedSMS) string {
-	return item.Sender + "\x00" + item.Content + "\x00" + item.Timestamp.Format(time.RFC3339Nano)
+	return item.Sender + "\x00" + item.Content + "\x00" + item.Timestamp.UTC().Format(time.RFC3339Nano)
 }
 
 func (a *app) setSMSPollStatus(err error) {
@@ -629,7 +641,7 @@ func (a *app) pollSMSOnce() error {
 		return err
 	}
 	newCount, total := a.mergeSMS(messages)
-	if a.smsAutoCleanupME && len(messages) > 0 {
+	if a.smsAutoCleanupME && len(messages) > 0 && a.smsWebhook.canCleanup(messages) {
 		before, after, cleanupErr := a.clearUSBATSMSMemory("ME")
 		if cleanupErr != nil {
 			log.Printf("auto cleanup ME SMS failed: %v", cleanupErr)
@@ -1011,7 +1023,7 @@ func (a *app) readUSBATSMS() ([]receivedSMS, error) {
 			continue
 		}
 		for _, item := range items {
-			key := item.Sender + "\x00" + item.Content + "\x00" + item.Timestamp.Format(time.RFC3339Nano)
+			key := smsCacheKey(item)
 			if seen[key] {
 				continue
 			}
@@ -1173,6 +1185,7 @@ func (a *app) smsStatus(w http.ResponseWriter, _ *http.Request) {
 		"auto_cleanup_me": a.smsAutoCleanupME,
 		"last_poll":       lastPoll,
 		"last_poll_error": lastPollError,
+		"webhook":         a.smsWebhook.getStatus(),
 	})
 }
 

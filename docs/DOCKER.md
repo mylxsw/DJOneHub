@@ -82,6 +82,8 @@ USB 通过 `/dev/bus/usb` 和设备权限规则访问，不需要 `--privileged`
 
 ## 数据和演示
 
+收到短信后可以通过 Webhook 转发：复制 `.env.example` 为 `.env`，填写 `DJONEHUB_WEBHOOK_URL`（可选 `DJONEHUB_WEBHOOK_TOKEN`），执行 `make up`。请求格式、重试和去重说明见 [短信 Webhook](WEBHOOK.md)。
+
 Profile 的本地备注保存在 `djonehub_djonehub-data` 数据卷。短信收件箱仍遵循原项目的内存缓存方式，容器重建会清空本次收件箱。Docker 版默认关闭导入短信后的模块自动清理，保留模块里的短信以便重启后重新读取。手动清理按钮仍可使用。
 
 无硬件演示（先停止真实运行，避免占用相同端口）：

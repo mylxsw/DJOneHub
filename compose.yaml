@@ -6,6 +6,9 @@ services:
     init: true
     command: ["-listen", "0.0.0.0:7575", "-sms-auto-cleanup=false"]
     restart: unless-stopped
+    environment:
+      DJONEHUB_WEBHOOK_URL: "${DJONEHUB_WEBHOOK_URL:-}"
+      DJONEHUB_WEBHOOK_TOKEN: "${DJONEHUB_WEBHOOK_TOKEN:-}"
     ports:
       - "0.0.0.0:${DJONEHUB_PORT:-7575}:7575"
     volumes:

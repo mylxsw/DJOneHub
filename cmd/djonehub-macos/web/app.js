@@ -249,7 +249,11 @@ async function loadSMS() {
       : "自动轮询未启用";
     const cleanupText = status.auto_cleanup_me ? "自动清理 ME 已开启" : "自动清理 ME 未开启";
     const errorText = status.last_poll_error ? ` · 最近错误：${status.last_poll_error}` : "";
-    $("#sms-status").textContent = `当前缓存 ${messages.length} 条短信 · ${pollText} · ${cleanupText}${errorText}`;
+    const webhook = status.webhook;
+    const webhookText = webhook?.enabled
+      ? ` · Webhook 待转发 ${webhook.pending || 0} 条${webhook.last_error ? ` · ${webhook.last_error}` : ""}`
+      : "";
+    $("#sms-status").textContent = `当前缓存 ${messages.length} 条短信 · ${pollText} · ${cleanupText}${webhookText}${errorText}`;
     if (lastSMSCount !== null && messages.length > lastSMSCount) {
       notice(`收到 ${messages.length - lastSMSCount} 条新短信`);
     }
