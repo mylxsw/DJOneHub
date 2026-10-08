@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DJOneHub for macOS</title>
+  <title>DJOneHub</title>
   <script>
     try {
       const theme = localStorage.getItem("djonehub-theme") || localStorage.getItem("vohive-theme");
@@ -16,7 +16,7 @@
   <header class="app-header">
     <div class="brand-block">
       <div class="brand-line"><span class="brand-mark" aria-hidden="true"></span><span class="eyebrow">DJI 4G MODULE</span></div>
-      <h1>DJOneHub <span>macOS</span></h1>
+      <h1>DJOneHub <span id="runtime-platform"></span></h1>
       <p id="device-summary">正在连接大疆 4G 模块</p>
     </div>
     <div class="header-actions">
@@ -142,7 +142,7 @@
         <button id="reboot-module" class="secondary danger" type="button">重启模块</button>
       </div>
       <p class="inline-status">模式 0 适合短信和 AT 管理；模式 1 是目前确认可用的 USB 网卡模式。切换 usbnet 后通常需要重启模块。</p>
-      <h2 class="subheading">macOS 网络接口</h2>
+      <h2 class="subheading">运行系统的网络接口</h2>
       <div id="network-interfaces" class="list empty">尚未读取接口</div>
     </section>
 

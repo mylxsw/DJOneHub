@@ -16,8 +16,8 @@ en9 1500 192.168.225 192.168.225.20 120 - 4096 80 - 2048 -`
 func TestSelectUSBTrafficInterfacePrefersDefaultRoute(t *testing.T) {
 	interfaces := []macNetInterface{
 		{Name: "en0", Kind: "ethernet", Status: "active"},
-		{Name: "en8", Kind: "ethernet", Status: "active"},
-		{Name: "en9", Kind: "ethernet", Status: "active"},
+		{Name: "en8", Kind: "usb-ethernet", Status: "active"},
+		{Name: "en9", Kind: "usb-ethernet", Status: "active"},
 	}
 	if got := selectUSBTrafficInterface(interfaces, macDefaultRoute{Interface: "en9"}); got != "en9" {
 		t.Fatalf("selected interface = %q, want en9", got)

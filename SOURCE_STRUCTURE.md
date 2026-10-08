@@ -7,7 +7,7 @@
 ```text
 DJOneHub-source-minimal/
 ├── cmd/
-│   └── djonehub-macos/       # macOS 主程序、USB AT、短信、网络与内嵌网页
+│   └── djonehub-macos/       # macOS/Linux 主程序、USB AT、短信、网络与内嵌网页
 │       └── web/              # 当前实际显示的原生管理页面
 ├── internal/
 │   ├── apduarbiter/          # SIM/eUICC APDU 通道并发协调
@@ -27,10 +27,14 @@ DJOneHub-source-minimal/
 │   └── THIRD_PARTY_NOTICES.md
 ├── scripts/
 │   ├── build-macos.sh        # 本地开发构建
+│   ├── docker.sh             # Docker 一键构建、USB 连接、启动与停止
 │   └── package-macos-arm64.sh# Apple Silicon 发行包构建
 ├── third_party/              # 当前构建实际使用的本地第三方源码
 ├── go.mod
 ├── go.sum
+├── Dockerfile
+├── compose.yaml
+├── Makefile                  # Docker 开发命令入口
 ├── LICENSE
 ├── THIRD_PARTY_NOTICES.md
 ├── README.md
@@ -40,7 +44,8 @@ DJOneHub-source-minimal/
 ## 关键入口
 
 - `cmd/djonehub-macos/main.go`：HTTP 服务、设备状态、短信、eSIM、网络和流量 API。
-- `cmd/djonehub-macos/usbat_darwin.go`：macOS 上通过 libusb 接管大疆模块 USB AT 接口。
+- `cmd/djonehub-macos/usbat_libusb.go`：macOS/Linux 上通过 libusb 接管大疆模块 USB AT 接口。
+- `cmd/djonehub-macos/linux_system.go`：Linux 的 USB 枚举、网络接口、路由和流量读取。
 - `cmd/djonehub-macos/usbat_esim_channel.go`：经 AT/APDU 访问实体 eUICC 卡片。
 - `cmd/djonehub-macos/web/`：由 `go:embed` 编译进二进制的网页界面。
 
@@ -57,6 +62,8 @@ Go 以“包”为编译边界。macOS 主程序虽然集中在 `cmd/djonehub-ma
 - Telegram、飞书、QQ 等机器人与转发功能
 - 原项目未被 macOS 入口引用的 API、任务、数据库和后台页面
 - `dist/`、下载包、日志、缓存及其他生成文件
+
+当前新增的 Docker 配置直接运行保留的主程序，不依赖原 Linux 服务端。运行说明见 [Docker 使用说明](docs/DOCKER.md)。
 
 ## 验证方式
 

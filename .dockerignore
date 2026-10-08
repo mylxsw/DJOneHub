@@ -1,0 +1,15 @@
+.git
+.DS_Store
+._*
+dist
+bin
+node_modules
+*.log
+*.pid
+*.test
+*.out
+.env
+.env.*
+.idea
+.vscode
+docs/images

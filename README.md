@@ -2,7 +2,7 @@
 
 DJOneHub 是一款面向**大疆第一代 4G 模块**的第三方 macOS 管理工具。它通过 USB 与模块现有接口通信，让模块无需虚拟机即可在 Mac 上完成短信收发、eSIM Profile 管理、AT 指令调试和 USB 4G 上网。
 
-程序及管理页面均在本机运行，默认只监听 `127.0.0.1:7575`，不会主动把 SIM、短信或卡片资料上传到远程服务器。
+程序及管理页面均在本机运行。原生 macOS 版默认只监听 `127.0.0.1:7575`，Docker 版绑定到 `0.0.0.0:7575`，支持局域网访问；程序不会主动把 SIM、短信或卡片资料上传到远程服务器。
 
 > [!IMPORTANT]
 > DJOneHub 是非官方第三方项目，与 DJI、Quectel、运营商及 eSIM 卡片厂商不存在隶属、授权或合作关系。
@@ -260,7 +260,7 @@ djonehub stop
 ~/Library/Application Support/DJOneHub
 ```
 
-终端默认只显示启动、停止和错误摘要，底层 USB 日志写入日志文件。管理页面默认仅供本机访问，同一局域网内的其他设备不能直接访问。
+终端默认只显示启动、停止和错误摘要，底层 USB 日志写入日志文件。原生 macOS 版的管理页面默认仅供本机访问；Docker 版支持局域网访问。
 
 ## 卸载
 
@@ -293,6 +293,27 @@ rm -rf "$HOME/Library/Application Support/DJOneHub"
 ```
 
 ## 从源码构建
+
+### 使用 Docker 开发（macOS + OrbStack / Linux）
+
+修改代码后，在项目目录执行同一条命令即可重新构建并运行：
+
+```sh
+make up
+```
+
+直接执行 `make` 也会重新构建并启动。端口绑定到 `0.0.0.0:7575`，本机访问 <http://127.0.0.1:7575>，局域网设备访问 `http://这台电脑的局域网IP:7575`。Mac 上需要支持 USB 直通的新版 OrbStack；脚本会把大疆 USB 设备连接到 Linux 容器，停止时归还 macOS。整个程序在 Docker 中运行，Mac 无需安装 Go 或 libusb。
+
+```sh
+make stop
+make logs
+make status
+make doctor
+```
+
+USB 直通期间，Mac 自身不能同时使用这块 USB 网卡。Docker 网络页面显示容器网络；详细运行方式、数据保留、设备重连和上网限制见 [Docker 使用说明](docs/DOCKER.md)。
+
+### 原生 macOS 构建
 
 源码仓库面向开发者。普通用户应优先下载 Releases 中已经打包好的 ZIP。
 
@@ -360,7 +381,7 @@ macOS 的代理配置与网络服务相关。切换到 USB 网卡后，可能需
 - 不同 SIM、eUICC、运营商、漫游环境和模块固件的兼容性可能不同。
 - 流量统计仅供参考，不等同于运营商账单。
 - 当前使用临时签名，尚未经过 Apple Developer ID 公证。
-- 管理页面默认仅供本机访问。
+- 原生 macOS 版的管理页面默认仅供本机访问；Docker 版支持局域网访问。
 
 ## 安全与资费提示
 

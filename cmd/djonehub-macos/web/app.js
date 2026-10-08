@@ -552,6 +552,7 @@ async function loadNetwork() {
   $("#network-status").textContent = "正在读取网络诊断...";
   try {
     const diag = await api("/api/network");
+    const system = diag.platform === "linux" ? "容器" : "macOS";
     const active = Array.isArray(diag.active_contexts) ? diag.active_contexts.join(", ") : "";
     const apns = Array.isArray(diag.pdp_contexts)
       ? diag.pdp_contexts.map((ctx) => `${ctx.id}:${ctx.apn}`).join(" · ")
@@ -565,8 +566,8 @@ async function loadNetwork() {
       ? `${route.interface}${route.gateway ? ` -> ${route.gateway}` : ""}`
       : "未知";
     grid.replaceChildren(
-      diagnosticCard("USB 网卡", diag.usb_network_present ? "已识别" : "未识别", "macOS 是否出现可用 USB 网络接口"),
-      diagnosticCard("默认出口", routeText, "当前 macOS 实际优先使用的网卡和网关"),
+      diagnosticCard("USB 网卡", diag.usb_network_present ? "已识别" : "未识别", `${system}是否出现可用 USB 网络接口`),
+      diagnosticCard("默认出口", routeText, `当前${system}实际优先使用的网卡和网关`),
       diagnosticCard("usbnet", diag.usbnet_mode || "未知", "模块当前 USB 网络模式"),
       diagnosticCard("蜂窝数据", active ? `已激活 ${active}` : "未激活", "PDP context 激活状态"),
       diagnosticCard("蜂窝 IP", addresses || "无", "模块侧拿到的数据网络地址"),
@@ -576,8 +577,8 @@ async function loadNetwork() {
 
     const errorText = diag.errors ? ` · 错误：${Object.values(diag.errors).join("；")}` : "";
     $("#network-status").textContent = diag.usb_network_present
-      ? `macOS 已识别 USB 网络接口${errorText}`
-      : `蜂窝侧可能已通，但 macOS 尚未识别 USB 网卡${errorText}`;
+      ? `${system}已识别 USB 网络接口${errorText}`
+      : `蜂窝侧可能已通，但${system}尚未识别 USB 网卡${errorText}`;
 
     const interfaces = Array.isArray(diag.mac_interfaces) ? diag.mac_interfaces : [];
     if (!interfaces.length) {
@@ -1103,6 +1104,9 @@ $("#usbnet-mode-2").addEventListener("click", () => setUSBNetMode(2));
 $("#usbnet-mode-3").addEventListener("click", () => setUSBNetMode(3));
 $("#reboot-module").addEventListener("click", rebootModule);
 
+api("/api/health").then((health) => {
+  $("#runtime-platform").textContent = health.platform === "linux" ? "Linux" : "macOS";
+}).catch(() => {});
 loadStatus();
 loadSMS();
 setNetworkTrafficPolling(true);

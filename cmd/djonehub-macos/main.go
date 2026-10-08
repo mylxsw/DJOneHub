@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -126,6 +127,7 @@ type usbDeviceStatus struct {
 }
 
 type networkDiagnostic struct {
+	Platform          string            `json:"platform"`
 	USBNetMode        string            `json:"usbnet_mode"`
 	USBCfg            string            `json:"usbcfg"`
 	PDPContexts       []pdpContext      `json:"pdp_contexts"`
@@ -184,9 +186,11 @@ func main() {
 	var port string
 	var listen string
 	var demo bool
+	var smsAutoCleanup bool
 	flag.StringVar(&port, "port", "", "AT serial port; auto-detected when omitted")
 	flag.StringVar(&listen, "listen", "127.0.0.1:7575", "HTTP listen address")
 	flag.BoolVar(&demo, "demo", false, "run the web UI with simulated modem data")
+	flag.BoolVar(&smsAutoCleanup, "sms-auto-cleanup", true, "delete module ME messages after importing them into memory")
 	flag.Parse()
 
 	if demo {
@@ -208,7 +212,7 @@ func main() {
 				usbDevice:        usbDevice,
 				usbAT:            usbATDevice,
 				smsPollInterval:  8 * time.Second,
-				smsAutoCleanupME: true,
+				smsAutoCleanupME: smsAutoCleanup,
 				smsReassembler:   smscodec.NewReassembler(),
 			}
 			if usbDevice != nil {
@@ -249,7 +253,7 @@ func main() {
 		log.Fatalf("create modem manager: %v", err)
 	}
 
-	instance := &app{modem: manager, port: port, smsPollInterval: 8 * time.Second, smsAutoCleanupME: true}
+	instance := &app{modem: manager, port: port, smsPollInterval: 8 * time.Second, smsAutoCleanupME: smsAutoCleanup}
 	manager.SetSMSCallback(instance.recordSMS)
 	if err := manager.Start(); err != nil {
 		log.Fatalf("open modem on %s: %v", port, err)
@@ -375,11 +379,15 @@ func newDemoApp() *app {
 
 func discoverATPort() (string, error) {
 	var ports []string
-	for _, pattern := range []string{
+	patterns := []string{
 		"/dev/cu.usbmodem*",
 		"/dev/cu.usbserial*",
 		"/dev/cu.wchusbserial*",
-	} {
+	}
+	if runtime.GOOS == "linux" {
+		patterns = []string{"/dev/ttyUSB*", "/dev/ttyACM*"}
+	}
+	for _, pattern := range patterns {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			return "", err
@@ -398,7 +406,7 @@ func discoverATPort() (string, error) {
 		}
 	}
 	if len(attempted) == 0 {
-		return "", errors.New("no Quectel/DJI USB serial ports found; pass -port /dev/cu.* explicitly")
+		return "", fmt.Errorf("no Quectel/DJI USB serial ports found (%s); trying USB AT", strings.Join(patterns, ", "))
 	}
 	return "", fmt.Errorf("no AT-capable port found among %s", strings.Join(attempted, ", "))
 }
@@ -418,6 +426,9 @@ func portScore(port string) int {
 }
 
 func discoverDJIUSBDevice() *usbDeviceStatus {
+	if runtime.GOOS == "linux" {
+		return discoverLinuxUSBDevice("/sys/bus/usb/devices")
+	}
 	out, err := exec.Command("ioreg", "-r", "-c", "IOUSBHostInterface", "-l", "-w", "0").Output()
 	if err != nil {
 		return nil
@@ -741,6 +752,7 @@ func (a *app) health(w http.ResponseWriter, _ *http.Request) {
 	esimManager, _ := a.currentESIMManager()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "port": a.port, "esim_available": a.demo || esimManager != nil, "demo": a.demo,
+		"platform":   runtime.GOOS,
 		"usb_device": usbDevice, "discovery_error": a.discoveryError,
 	})
 }
@@ -767,7 +779,7 @@ func (a *app) status(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	if a.modem == nil {
-		// A libusb handle may survive a physical unplug. Refresh the macOS USB
+		// A libusb handle may survive a physical unplug. Refresh the system USB
 		// inventory before using it so the UI never reports a stale connection.
 		if a.usbAT != nil && a.currentUSBDevice() == nil {
 			a.markUSBATDetached("DJI USB device disconnected")
@@ -1369,6 +1381,7 @@ func (a *app) networkDiagnostic(w http.ResponseWriter, _ *http.Request) {
 	raw := make(map[string]string)
 	errs := make(map[string]string)
 	diag := networkDiagnostic{
+		Platform:      runtime.GOOS,
 		USBDevice:     a.currentUSBDevice(),
 		MacInterfaces: discoverMacNetworkInterfaces(),
 		DefaultRoute:  discoverMacDefaultRoute(),
@@ -1469,11 +1482,11 @@ func (a *app) check4GRoute(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, networkCheckResult{
 			OK:      false,
 			Summary: "未读取到默认出口",
-			Detail:  "macOS 没有返回 default route",
+			Detail:  "当前运行系统没有返回 default route",
 		})
 		return
 	}
-	if active != nil && active.Name != "en0" && active.Kind == "ethernet" && active.Status == "active" {
+	if active != nil && isUSBTrafficInterface(*active) {
 		writeJSON(w, http.StatusOK, networkCheckResult{
 			OK:      true,
 			Summary: "当前正在走 4G 模块",
@@ -1612,6 +1625,9 @@ func parsePDPAddresses(resp string) []string {
 }
 
 func discoverMacNetworkInterfaces() []macNetInterface {
+	if runtime.GOOS == "linux" {
+		return discoverLinuxNetworkInterfaces("/sys/class/net")
+	}
 	out, err := exec.Command("ifconfig").Output()
 	if err != nil {
 		return nil
@@ -1653,6 +1669,10 @@ func discoverMacNetworkInterfaces() []macNetInterface {
 }
 
 func discoverMacDefaultRoute() macDefaultRoute {
+	if runtime.GOOS == "linux" {
+		out, _ := os.ReadFile("/proc/net/route")
+		return parseLinuxDefaultRoute(string(out))
+	}
 	out, err := exec.Command("route", "-n", "get", "default").Output()
 	if err != nil {
 		return macDefaultRoute{}
@@ -1709,7 +1729,7 @@ func classifyMacInterfaceName(name string) string {
 
 func hasLikelyUSBNetworkInterface(interfaces []macNetInterface) bool {
 	for _, item := range interfaces {
-		if item.Kind == "ethernet" && item.Name != "en0" && item.Status == "active" {
+		if isUSBTrafficInterface(item) {
 			return true
 		}
 	}
@@ -1718,12 +1738,12 @@ func hasLikelyUSBNetworkInterface(interfaces []macNetInterface) bool {
 
 func selectUSBTrafficInterface(interfaces []macNetInterface, route macDefaultRoute) string {
 	for _, item := range interfaces {
-		if item.Name == route.Interface && item.Kind == "ethernet" && item.Name != "en0" && item.Status == "active" {
+		if item.Name == route.Interface && isUSBTrafficInterface(item) {
 			return item.Name
 		}
 	}
 	for _, item := range interfaces {
-		if item.Kind == "ethernet" && item.Name != "en0" && item.Status == "active" {
+		if isUSBTrafficInterface(item) {
 			return item.Name
 		}
 	}
@@ -1731,6 +1751,9 @@ func selectUSBTrafficInterface(interfaces []macNetInterface, route macDefaultRou
 }
 
 func discoverMacInterfaceCounters() (map[string]networkByteCounters, error) {
+	if runtime.GOOS == "linux" {
+		return discoverLinuxInterfaceCounters("/sys/class/net")
+	}
 	out, err := exec.Command("netstat", "-ibn").Output()
 	if err != nil {
 		return nil, err

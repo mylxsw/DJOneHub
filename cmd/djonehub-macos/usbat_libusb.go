@@ -1,4 +1,4 @@
-//go:build darwin && cgo
+//go:build (darwin || linux) && cgo
 
 package main
 
@@ -12,6 +12,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,11 @@ func openDJIUSBAT() (*usbAT, error) {
 	if handle == nil {
 		C.libusb_exit(ctx)
 		return nil, errors.New("DJI USB AT device 2ca3:4006 not found")
+	}
+	// Only the selected AT interface is detached; network interfaces stay with
+	// their Linux drivers. libusb restores the driver when releasing the handle.
+	if runtime.GOOS == "linux" {
+		C.libusb_set_auto_detach_kernel_driver(handle, 1)
 	}
 	candidates, err := usbATCandidates(handle)
 	if err != nil {
@@ -341,46 +347,4 @@ func (u *usbAT) bulkReadLocked(endpoint byte, timeout time.Duration) ([]byte, er
 
 func usbErrorName(rc C.int) string {
 	return C.GoString(C.libusb_error_name(rc))
-}
-
-func atResponseComplete(resp string) bool {
-	normalized := strings.ReplaceAll(resp, "\r\n", "\n")
-	return strings.Contains(normalized, "\nOK\n") ||
-		strings.HasSuffix(normalized, "\nOK") ||
-		atResponseIsError(normalized)
-}
-
-func atResponseIsError(resp string) bool {
-	normalized := strings.ToUpper(strings.ReplaceAll(resp, "\r\n", "\n"))
-	return strings.Contains(normalized, "\nERROR\n") ||
-		strings.HasSuffix(normalized, "\nERROR") ||
-		strings.Contains(normalized, "+CME ERROR:") ||
-		strings.Contains(normalized, "+CMS ERROR:")
-}
-
-func atResponseHasPrompt(resp string) bool {
-	trimmed := strings.TrimRight(resp, " \t\r\n")
-	return strings.HasSuffix(trimmed, ">")
-}
-
-// A probe must receive OK. ERROR merely proves that a bulk interface accepted
-// bytes; it is not the modem's AT channel (the QMI interface can do that).
-func atProbeSucceeded(resp string) bool {
-	normalized := strings.ReplaceAll(strings.TrimSpace(resp), "\r\n", "\n")
-	return normalized == "OK" || strings.HasSuffix(normalized, "\nOK")
-}
-
-func normalizeATResponse(resp string) string {
-	resp = strings.ReplaceAll(resp, "\r\r\n", "\r\n")
-	resp = strings.TrimSpace(resp)
-	lines := strings.Split(resp, "\n")
-	filtered := lines[:0]
-	for _, line := range lines {
-		line = strings.TrimRight(line, "\r")
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		filtered = append(filtered, line)
-	}
-	return strings.Join(filtered, "\r\n")
 }

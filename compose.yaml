@@ -1,0 +1,27 @@
+name: djonehub
+services:
+  djonehub:
+    build: .
+    image: djonehub:local
+    init: true
+    command: ["-listen", "0.0.0.0:7575", "-sms-auto-cleanup=false"]
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:${DJONEHUB_PORT:-7575}:7575"
+    volumes:
+      - djonehub-data:/data
+      # Mount the bus directory so re-enumerated devices remain visible.
+      - /dev/bus/usb:/dev/bus/usb
+    device_cgroup_rules:
+      - "c 189:* rw"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  djonehub-data:
