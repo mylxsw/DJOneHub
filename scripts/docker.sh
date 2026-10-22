@@ -4,10 +4,40 @@ set -euo pipefail
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 STATE_DIR="$ROOT_DIR/dist/docker"
 USB_STATE="$STATE_DIR/usb-id"
+PAUSED="$STATE_DIR/paused"
+LOCK="$STATE_DIR/operation.lock"
 cd "$ROOT_DIR"
 
 compose() { docker compose -f "$ROOT_DIR/compose.yaml" "$@"; }
 fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+# Serialize automatic recovery with manual start/stop. Recover skips busy jobs.
+lock_operation() {
+  mkdir -p "$STATE_DIR"
+  # A separate short-lived claim prevents two processes reaping the same old
+  # lock and accidentally deleting a new owner's lock after a reboot/crash.
+  if mkdir "$LOCK.reap" 2>/dev/null; then
+    local owner owner_started current_started
+    if [[ -f "$LOCK/pid" ]]; then
+      owner=$(cat "$LOCK/pid")
+      owner_started=$(cat "$LOCK/started" 2>/dev/null || true)
+      current_started=$(ps -p "$owner" -o lstart= 2>/dev/null || true)
+      if [[ $owner =~ ^[0-9]+$ ]] && { ! kill -0 "$owner" 2>/dev/null || [[ -n "$owner_started" && "$owner_started" != "$current_started" ]]; }; then
+        rm -f "$LOCK/pid" "$LOCK/started"
+        rmdir "$LOCK" 2>/dev/null || true
+      fi
+    fi
+    rmdir "$LOCK.reap"
+  fi
+  if ! mkdir "$LOCK" 2>/dev/null; then
+    [[ ${1:-} == recover ]] && exit 0
+    fail '正在启动、停止或恢复服务，请稍后再试。'
+  fi
+  trap 'rm -f "$LOCK/pid" "$LOCK/started"; rmdir "$LOCK" 2>/dev/null || true' EXIT
+  printf '%s\n' "$$" > "$LOCK/pid"
+  # A PID can be reused after a reboot; remember its process start time too.
+  ps -p "$$" -o lstart= > "$LOCK/started"
+}
 
 check_engine() {
   command -v docker >/dev/null || fail '请先安装并启动 OrbStack（Mac）或 Docker Engine（Linux）。'
@@ -72,10 +102,12 @@ return_usb() {
 
 case ${1:-up} in
   up|start)
+    lock_operation
     check_engine
     if [[ $(uname -s) == Darwin ]]; then choose_usb; fi
     # Build first: a compilation failure leaves the existing service and USB alone.
     compose build
+    rm -f "$PAUSED"
     if [[ $(uname -s) == Darwin ]]; then attach_usb; fi
     if ! compose up -d --force-recreate --wait --wait-timeout 60; then
       compose logs --tail=30 || true
@@ -104,10 +136,56 @@ case ${1:-up} in
       "${DJONEHUB_PORT:-7575}" "${DJONEHUB_PORT:-7575}" "${DJONEHUB_PORT:-7575}"
     ;;
   stop|down)
+    lock_operation
+    # Remember intentional stops, including across reboots.
+    touch "$PAUSED"
     check_engine
     compose down
     if [[ $(uname -s) == Darwin ]]; then return_usb; fi
     printf '已停止，保存的本地资料保留在 Docker 数据卷中。\n'
+    ;;
+  recover)
+    lock_operation recover
+    [[ ! -f "$PAUSED" ]] || exit 0
+    if [[ $(uname -s) == Darwin ]]; then
+      export DOCKER_CONTEXT=orbstack
+      command -v orb >/dev/null || fail '自动恢复需要 OrbStack。'
+      if ! docker info >/dev/null 2>&1; then
+        orb start
+      fi
+    fi
+    check_engine
+    docker image inspect djonehub:local >/dev/null 2>&1 \
+      || fail '运行镜像不存在，请先执行 make up 完成首次构建。'
+    if [[ $(uname -s) == Darwin ]]; then
+      choose_usb
+      # Quiet when already attached; polling should not fill the log.
+      if orb usb info "$USB_ID" | usb_is_detached; then attach_usb; fi
+    fi
+    cid=$(compose ps --all --quiet djonehub)
+    if [[ -z "$cid" ]] || [[ $(docker inspect --format '{{.State.Running}}' "$cid") != true ]]; then
+      printf '正在恢复 DJOneHub 容器…\n'
+      compose up -d --no-build --pull never
+    fi
+    health=$(compose exec -T djonehub curl --noproxy '*' -fsS --max-time 8 http://127.0.0.1:7575/api/health) || health=''
+    if printf '%s\n' "$health" | awk '/"discovery_error":""/ && /"vendor_id":"2ca3"/ { found=1 } END { exit !found }'; then
+      rm -f "$STATE_DIR/recovery-failures"
+    else
+      failures=0
+      if [[ -f "$STATE_DIR/recovery-failures" ]]; then
+        read -r failures < "$STATE_DIR/recovery-failures"
+        [[ $failures =~ ^[0-9]+$ ]] || failures=0
+      fi
+      failures=$((failures + 1))
+      printf '%s\n' "$failures" > "$STATE_DIR/recovery-failures"
+      if [[ $failures -ge 3 ]]; then
+        printf 'USB 已交给 Linux，但管理接口连续三次未恢复，重启 DJOneHub 容器…\n'
+        compose restart djonehub
+        rm -f "$STATE_DIR/recovery-failures"
+      else
+        printf 'USB 已交给 Linux，等待管理接口恢复（%s/3）。\n' "$failures"
+      fi
+    fi
     ;;
   logs)
     check_engine
@@ -124,6 +202,6 @@ case ${1:-up} in
     compose ps
     ;;
   *)
-    fail '用法：./scripts/docker.sh [up|stop|logs|status|doctor]'
+    fail '用法：./scripts/docker.sh [up|stop|logs|status|doctor|recover]'
     ;;
 esac

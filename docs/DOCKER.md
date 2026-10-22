@@ -49,6 +49,65 @@ make up DJONEHUB_USB_ID=03100000
 
 脚本需要一块目标设备。当前程序的 libusb 后端按 VID/PID 打开第一块匹配设备；使用多块同型号设备时，请确保只有目标模块交给 Linux。
 
+## Mac 无屏服务器：重启后自动恢复
+
+Docker 的 `restart: unless-stopped` 只恢复容器，不会执行 Mac 上的 USB 连接命令。电脑重启后即使网页能打开，也可能报 `DJI USB device is not connected`。
+
+首次成功执行 `make up` 后，安装自动恢复任务：
+
+```sh
+make autostart
+make autostart-status
+```
+
+任务使用 macOS LaunchAgent，在当前用户登录时自动加载，每 30 秒检查一次：
+
+- OrbStack 未就绪时尝试 `orb start`，下一轮继续重试。
+- 按 VID/PID `2ca3:4006` 查找当前 USB ID，并连接尚未交给 Linux 的设备。
+- 容器停止或不存在时，使用已构建的本地镜像启动，不重新编译、不下载镜像。
+- 健康状态正常时不重建或重启容器。USB 已连接但管理接口连续三次未恢复时，只重启 DJOneHub 容器。
+- 每轮最多等待约 65 秒，超时结束本轮，后续继续检查。日志超过 5 MiB 时保留一份轮转文件。
+
+`make stop` 会暂停自动恢复，暂停状态重启后仍保留；`make up` 恢复运行和自动检查。`make autostart-stop` 仅卸载后台任务，当前容器继续运行。
+
+**无人值守重启还需要 macOS 自动登录安装任务的用户。** 用户任务在登录后运行，OrbStack 目前不支持直接从系统级 LaunchDaemon 在未登录状态下启动。仅安装此任务不能绕过登录要求。
+
+一次性通过“系统设置 → 用户与群组 → 自动登录为”选择运行服务的账号，并在系统设置中输入账号密码。FileVault 开启时无法自动登录；本脚本不会更改自动登录或 FileVault 设置。设置完成后，普通重启应自动登录、启动 OrbStack、连接 USB，并恢复服务；真正的整机重启验收需要在方便中断服务时进行。
+
+自定义设置需在安装时一起传入；修改后重新安装：
+
+```sh
+make autostart DJONEHUB_PORT=7576
+# 多块同型号设备时指定目标；只有一块时保持自动查找，以适应拔插后 ID 变化。
+make autostart DJONEHUB_USB_ID=03100000
+```
+
+安装和运行需要 `python3`，后台任务使用安装时记录的 Python 路径。任务、日志和暂停标记：
+
+```text
+~/Library/LaunchAgents/in.djonehub.usb-recovery.plist
+项目目录/dist/docker/autostart.log
+项目目录/dist/docker/paused
+```
+
+项目目录不能移动；移动后在新目录重新执行 `make autostart`。后台任务不会自动拉取代码，修改代码仍执行 `make up`。`.env` 保持在项目根目录，后台任务不会将 Webhook 地址或 Token 写入启动配置。
+
+当前 Mac 使用市电的系统睡眠设为 1 分钟，断电恢复后自动开机未开启；长期服务器还应在一次性系统配置时处理。这些设置需要管理员权限，例如：
+
+```sh
+make server-power
+```
+
+它执行 `sudo pmset -c sleep 0 autorestart 1`，关闭市电供电时的系统自动睡眠，并开启断电恢复后的自动开机。需要在终端输入管理员密码。自动登录后可锁屏，避免手动注销用户会话。
+
+参考：[OrbStack 未登录启动的官方说明](https://github.com/orbstack/orbstack/issues/1767)、[Apple 自动登录设置](https://support.apple.com/102316)、[Apple LaunchAgent 生命周期](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)。
+
+自动恢复脚本的隔离测试（不会操作真实 USB 或容器）：
+
+```sh
+python3 scripts/test_docker_recovery.py
+```
+
 ## USB 与上网模式的区别
 
 本次 Docker 配置以短信、eSIM 和设备状态管理为用途，保留模块当前模式，不自动切换到上网模式。

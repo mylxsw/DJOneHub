@@ -318,7 +318,9 @@ make status
 make doctor
 ```
 
-USB 直通期间，Mac 自身不能同时使用这块 USB 网卡。Docker 网络页面显示容器网络；详细运行方式、数据保留、设备重连和上网限制见 [Docker 使用说明](docs/DOCKER.md)。
+无屏 Mac 服务器可执行 `make autostart` 安装 USB 和容器自动恢复任务；无人值守重启还需一次性开启 macOS 自动登录。`make autostart-status` 查看任务，`make autostart-stop` 卸载。手动 `make stop` 会暂停自动恢复，`make up` 恢复。
+
+USB 直通期间，Mac 自身不能同时使用这块 USB 网卡。Docker 网络页面显示容器网络；详细运行方式、自动恢复与登录要求、数据保留、设备重连和上网限制见 [Docker 使用说明](docs/DOCKER.md)。
 
 ### 原生 macOS 构建
 
